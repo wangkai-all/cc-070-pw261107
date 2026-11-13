@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>本地会计分录关账台</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="app">
+    <h1>📒 本地会计分录关账台</h1>
+    <span class="company" id="company-name"></span>
+    <span class="spacer"></span>
+    <span class="demo-badge">全部数据为虚构账簿 · 仅存本机浏览器</span>
+    <button class="btn ghost small" id="btn-export">导出数据(JSON)</button>
+    <button class="btn ghost small" id="btn-import-file">导入数据文件</button>
+    <input type="file" id="import-file" accept=".json,application/json" hidden>
+    <button class="btn ghost small" id="btn-reset">重置为演示数据</button>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="entries" class="active">分录与凭证</button>
+    <button data-tab="close">账期关账</button>
+    <button data-tab="tb">试算平衡表</button>
+    <button data-tab="correct">冲销与跨期更正</button>
+  </nav>
+
+  <main>
+    <!-- ============ 1. 分录与凭证 ============ -->
+    <section class="tabview active" id="tab-entries">
+      <div class="panel">
+        <div class="row">
+          <div class="field">
+            <label>入账账期</label>
+            <select id="f-period"></select>
+          </div>
+          <div class="field">
+            <label>科目</label>
+            <select id="f-account"></select>
+          </div>
+          <div class="field">
+            <label>来源凭证号</label>
+            <select id="f-voucher"></select>
+          </div>
+          <div class="field">
+            <label>分录类型</label>
+            <select id="f-kind">
+              <option value="">全部</option>
+              <option value="original">原始分录</option>
+              <option value="reversal">冲销分录</option>
+              <option value="correction">更正分录</option>
+            </select>
+          </div>
+          <div class="field" style="flex:1; min-width:160px;">
+            <label>关键字（摘要/凭证号/科目）</label>
+            <input type="text" id="f-keyword" placeholder="例如：折旧">
+          </div>
+          <button class="btn ghost" id="btn-clear-filter">清除筛选</button>
+          <span style="flex:1"></span>
+          <button class="btn primary" id="btn-new-voucher">＋ 录入凭证</button>
+          <button class="btn ghost" id="btn-import-vouchers">导入凭证 / 载入错误样本</button>
+        </div>
+      </div>
+
+      <div class="kpi-strip" id="entries-kpi"></div>
+
+      <div class="panel">
+        <h2>分录列表 <span class="hint">按账期、科目、来源凭证展示；点击行查看完整凭证</span></h2>
+        <div style="overflow-x:auto;">
+          <table id="entries-table">
+            <thead>
+              <tr>
+                <th>入账账期</th><th>凭证账期</th><th>来源凭证</th><th>行</th>
+                <th>科目代码</th><th>科目名称</th><th>摘要</th><th>类型</th>
+                <th class="num">借方(元)</th><th class="num">贷方(元)</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty" id="entries-empty" hidden>没有符合条件的分录</div>
+      </div>
+    </section>
+
+    <!-- ============ 2. 账期关账 ============ -->
+    <section class="tabview" id="tab-close">
+      <div class="panel">
+        <h2>账期列表 <span class="hint">流程：检查 → 模拟关账 → 正式关账；关账后如需更正请走“冲销与跨期更正”</span></h2>
+        <div class="period-grid" id="period-grid"></div>
+        <p class="small-note">
+          规则：存在阻断原因（借贷不平 / 未映射科目 / 凭证缺行）时阻止关账并逐条列出原因；
+          跨期入账为警告项，不阻断关账。模拟关账期间禁止录入凭证，可随时取消。
+          正式关账后仅允许重开最后一个关账账期，且原凭证仍保持锁定（不可直接改删，只能冲销）。
+        </p>
+      </div>
+
+      <div class="panel" id="check-panel" hidden>
+        <h2>关账检查 —— <span id="check-period"></span>
+          <span class="hint" id="check-status"></span>
+        </h2>
+        <div class="kpi-strip" id="check-kpi"></div>
+        <h2 style="margin-top:6px;">阻断原因（不允许关账）</h2>
+        <ul class="checklist" id="blocker-list"></ul>
+        <h2>警告（不阻断，建议关注）</h2>
+        <ul class="checklist" id="warning-list"></ul>
+        <div class="row" style="margin-top:14px;">
+          <button class="btn ghost" id="btn-simulate">模拟关账</button>
+          <button class="btn primary" id="btn-close">正式关账</button>
+          <button class="btn ghost" id="btn-cancel-sim">取消模拟关账</button>
+          <button class="btn danger" id="btn-reopen">重开账期</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 3. 试算平衡表 ============ -->
+    <section class="tabview" id="tab-tb">
+      <div class="panel">
+        <div class="row">
+          <div class="field">
+            <label>报表账期</label>
+            <select id="tb-period"></select>
+          </div>
+          <div class="field" style="justify-content:flex-end;">
+            <label>&nbsp;</label>
+            <button class="btn ghost" id="btn-tb-refresh">刷新</button>
+          </div>
+          <span style="flex:1"></span>
+          <div class="field" id="tb-balance-badges" style="justify-content:flex-end;"></div>
+        </div>
+        <p class="small-note">期初余额取自该账期之前的全部已录入分录；点击科目行或类别行可下钻查看组成它的分录。</p>
+      </div>
+      <div class="panel" style="overflow-x:auto;">
+        <table id="tb-table">
+          <thead>
+            <tr>
+              <th rowspan="2">科目代码</th><th rowspan="2">科目名称</th>
+              <th class="num" colspan="2">期初余额</th>
+              <th class="num" colspan="2">本期发生额</th>
+              <th class="num" colspan="2">期末余额</th>
+            </tr>
+            <tr>
+              <th class="num">借方</th><th class="num">贷方</th>
+              <th class="num">借方</th><th class="num">贷方</th>
+              <th class="num">借方</th><th class="num">贷方</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 4. 冲销与跨期更正 ============ -->
+    <section class="tabview" id="tab-correct">
+      <div class="panel">
+        <h2>跨期更正影响 <span class="hint">冲销发生在原账期之外时，同时展示原账期与当前账期的科目级影响</span></h2>
+        <div id="impact-list"></div>
+      </div>
+      <div class="panel">
+        <h2>更正链条 <span class="hint">原始凭证 → 冲销凭证 → 更正凭证；已关账原记录不可直接修改</span></h2>
+        <div id="chain-list"></div>
+      </div>
+      <div class="panel">
+        <h2>已关账凭证（可发起冲销）</h2>
+        <div style="overflow-x:auto;">
+          <table id="locked-table">
+            <thead>
+              <tr><th>凭证号</th><th>凭证日期</th><th>入账账期</th><th>来源</th><th>摘要</th><th>状态</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ 弹窗：凭证详情 ============ -->
+  <div class="modal-mask" id="modal-voucher">
+    <div class="modal">
+      <header>
+        <h3 id="v-title">凭证详情</h3>
+        <button class="x-btn" data-close>✕</button>
+      </header>
+      <div class="body" id="v-body"></div>
+      <footer id="v-footer"></footer>
+    </div>
+  </div>
+
+  <!-- ============ 弹窗：录入/更正凭证 ============ -->
+  <div class="modal-mask" id="modal-edit">
+    <div class="modal">
+      <header>
+        <h3 id="edit-title">录入凭证</h3>
+        <button class="x-btn" data-close>✕</button>
+      </header>
+      <div class="body">
+        <div class="row">
+          <div class="field">
+            <label>凭证号 *</label>
+            <input type="text" id="e-no" placeholder="PZ-YYYYMM-xxx">
+          </div>
+          <div class="field">
+            <label>凭证日期 *</label>
+            <input type="date" id="e-date">
+          </div>
+          <div class="field">
+            <label>入账账期 *（可与凭证账期不同 = 跨期入账）</label>
+            <select id="e-period"></select>
+          </div>
+          <div class="field">
+            <label>来源</label>
+            <input type="text" id="e-source" placeholder="手工录入 / 银行回单 …">
+          </div>
+        </div>
+        <div class="field" style="margin-top:10px;">
+          <label>摘要</label>
+          <input type="text" id="e-summary" style="width:100%;">
+        </div>
+        <div style="margin-top:14px;">
+          <table class="line-editor">
+            <thead>
+              <tr><th style="width:170px;">科目 *</th><th>行摘要</th><th class="num" style="width:130px;">借方(元)</th><th class="num" style="width:130px;">贷方(元)</th><th style="width:42px;"></th></tr>
+            </thead>
+            <tbody id="e-lines"></tbody>
+          </table>
+          <div class="row" style="margin-top:8px;">
+            <button class="btn ghost small" id="btn-add-line">＋ 加一行</button>
+            <span style="flex:1"></span>
+            <span id="e-balance" class="badge"></span>
+          </div>
+        </div>
+        <p class="small-note" id="e-correct-note" hidden></p>
+      </div>
+      <footer>
+        <button class="btn ghost" data-close>取消</button>
+        <button class="btn primary" id="btn-save-voucher">保存凭证</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ============ 弹窗：导入凭证 ============ -->
+  <div class="modal-mask" id="modal-import">
+    <div class="modal">
+      <header>
+        <h3>批量导入凭证（JSON）</h3>
+        <button class="x-btn" data-close>✕</button>
+      </header>
+      <div class="body">
+        <p class="small-note" style="margin-top:0;">
+          粘贴凭证数组 JSON。字段：voucherNo, voucherDate(YYYY-MM-DD), source, summary,
+          lines[{accountCode, debit, credit, summary}]，可选 postPeriod 指定期末跨期入账账期。
+          同一凭证号重复导入不会重复入账；借贷不平、未映射科目、缺行的凭证将被逐条拒绝并列原因。
+        </p>
+        <textarea id="import-text" rows="12" style="width:100%;" placeholder='[{"voucherNo":"PZ-...", ...}]'></textarea>
+        <div id="import-result" style="margin-top:10px;"></div>
+      </div>
+      <footer>
+        <button class="btn ghost" id="btn-load-bad-samples">载入错误样本（含重复/不平/未映射/缺行）</button>
+        <span style="flex:1"></span>
+        <button class="btn ghost" data-close>关闭</button>
+        <button class="btn primary" id="btn-do-import">执行导入</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ============ 弹窗：下钻分录 ============ -->
+  <div class="modal-mask" id="modal-drill">
+    <div class="modal">
+      <header>
+        <h3 id="drill-title">组成分录</h3>
+        <button class="x-btn" data-close>✕</button>
+      </header>
+      <div class="body" style="overflow-x:auto;">
+        <table id="drill-table">
+          <thead><tr><th>凭证号</th><th>行</th><th>科目</th><th>摘要</th><th class="num">借方</th><th class="num">贷方</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <footer><button class="btn ghost" data-close>关闭</button></footer>
+    </div>
+  </div>
+
+  <div id="toast-wrap"></div>
+
+  <script src="js/core.js"></script>
+  <script src="js/seed.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

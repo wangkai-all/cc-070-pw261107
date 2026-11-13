@@ -1,0 +1,15 @@
+{
+  "name": "local-close-desk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "本地会计分录关账台（纯前端 + localStorage，虚构账簿演示数据）",
+  "scripts": {
+    "test": "node --test tests/core.test.js",
+    "test:e2e": "node tests/e2e-workflow.js",
+    "test:smoke": "node tests/dom-smoke.js",
+    "test:all": "node --test tests/core.test.js && node tests/e2e-workflow.js && node tests/dom-smoke.js",
+    "serve": "node -e \"const http=require('http'),fs=require('fs'),p=require('path');const t={'.html':'text/html','.js':'text/javascript','.css':'text/css'};http.createServer((q,r)=>{let f=q.url==='/'?'/index.html':q.url.split('?')[0];const fp=p.join(process.cwd(),f);fs.readFile(fp,(e,d)=>{if(e){r.writeHead(404);return r.end('404')}r.writeHead(200,{'Content-Type':t[p.extname(fp)]||'application/octet-stream'});r.end(d)})}).listen(8080,()=>console.log('http://localhost:8080'))\""
+  },
+  "keywords": ["accounting", "close", "trial-balance", "ledger"],
+  "license": "UNLICENSED"
+}
